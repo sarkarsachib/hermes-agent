@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Hermes Mobile</string>
+    <string name="connecting">Connecting…</string>
+    <string name="connected">Connected</string>
+    <string name="disconnected">Disconnected</string>
+    <string name="shizuku_needed">Shizuku access required for device control</string>
+    <string name="shizuku_request">Enable Shizuku</string>
+    <string name="terminal">Terminal</string>
+    <string name="chat">Chat</string>
+    <string name="send">Send</string>
+    <string name="enter_command">Enter command</string>
+</resources>
