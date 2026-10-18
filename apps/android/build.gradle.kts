@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.google.devtools.kapt")
+    id("org.jetbrains.kotlin.kapt")
     id("androidx.compose.ui")
     id("androidx.compose.compiler")
 }
