@@ -2,8 +2,6 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
-    id("androidx.compose.ui")
-    id("androidx.compose.compiler")
 }
 
 android {
@@ -16,12 +14,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-        // Allow embedding Python/proot in native libs
-        externalNativeBuild {
-            cmake {
-                cppFlags ""
-            }
-        }
     }
 
     buildFeatures {
@@ -29,14 +21,13 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.6.0"
+        kotlinCompilerExtensionVersion = "1.5.14"
     }
 
     kotlinOptions {
         jvmTarget = "1.8"
     }
 
-    namespaceSuffix ".mobile"
 }
 
 dependencies {
@@ -48,15 +39,13 @@ dependencies {
 
     // Compose UI
     implementation("androidx.compose.ui:ui:1.4.0")
+    implementation("androidx.compose.foundation:foundation:1.4.0")
     implementation("androidx.compose.ui:ui-unit:1.4.0")
     implementation("androidx.compose.ui:ui-graphics:1.4.0")
-    implementation("androidx.compose.ui:ui-input:1.4.0")
     implementation("androidx.compose.ui:ui-text:1.4.0")
-    implementation("androidx.compose.ui:ui-unit:1.4.0")
-    implementation("androidx.compose.ui:ui-navigation:1.4.0")
-    implementation("androidx.compose.ui:ui-material:1.4.0")
-    implementation("androidx.compose.ui:material-icons-core:1.4.0")
-    implementation("androidx.compose.ui:material-icons-extended:1.4.0")
+    implementation("androidx.compose.material:material-icons-core:1.4.0")
+    implementation("androidx.compose.material:material-icons-extended:1.4.0")
+    implementation("androidx.compose.material3:material3:1.1.0")
 
     // Compose lifecycle and remember
     implementation("androidx.compose.runtime:runtime-livedata:1.4.0")
@@ -65,13 +54,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.8.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.0")
     implementation("androidx.activity:activity-compose:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // Shizuku API
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
-
-    // Termux terminal library
-    implementation("com.termux.termux-app:terminal-view:0.118.0")
 
     // OKHTTP for gateway WebSocket
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

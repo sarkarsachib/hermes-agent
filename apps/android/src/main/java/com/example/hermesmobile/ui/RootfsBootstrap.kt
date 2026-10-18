@@ -34,18 +34,20 @@ object RootfsBootstrap {
     fun execute(
         context: Context,
         url: String = EXAMPLE_ROOTFS_URL,
-        expectedSha256: String = EXAMPLE_ROOTFS_SHA256
+        expectedSha256: String = EXAMPLE_ROOTFS_SHA256,
+        onComplete: (Boolean) -> Unit = {}
     ) {
         // Check if rootfs already exists
         val rootfsDir = File(context.filesDir, "linux/rootfs")
         if (rootfsDir.exists() && rootfsDir.isDirectory) {
             Log.i("RootfsBootstrap", "Rootfs already present at ${rootfsDir.absolutePath}")
             // TODO: verify integrity if desired; if valid, mark bootstrapped
+            onComplete(true)
             return
         }
 
         // Start async download
-        DownloadTask(context, rootfsDir, url, expectedSha256).execute()
+        DownloadTask(context, rootfsDir, url, expectedSha256, onComplete).execute()
     }
 
     /** Download + verify + extract task. */
@@ -53,13 +55,14 @@ object RootfsBootstrap {
         private val ctx: Context,
         private val targetDir: File,
         private val url: String,
-        private val expectedSha256: String
+        private val expectedSha256: String,
+        private val onComplete: (Boolean) -> Unit
     ) : AsyncTask<Void, Int, Boolean>() {
 
         private var downloadUrl: String = url
         private var expectedHash: String = expectedSha256
 
-        override fun doInBackground(*params: Void?): Boolean {
+        override fun doInBackground(vararg params: Void?): Boolean {
             try {
                 // 1. Create target directory structure
                 targetDir.mkdirs()
@@ -123,6 +126,7 @@ object RootfsBootstrap {
         }
 
         override fun onPostExecute(success: Boolean) {
+            onComplete(success)
             if (success) {
                 Log.i("RootfsBootstrap", "Rootfs is ready for proot usage")
                 // TODO: signal MainActivity or controller so UI can enable terminal mode
@@ -138,7 +142,7 @@ object RootfsBootstrap {
                 val url = java.net.URL(urlString)
                 val connection = url.openConnection()
                 connection.connectTimeout = 30_000
-                ReadTimeout = 30_000
+                connection.readTimeout = 30_000
                 connection.setRequestProperty("User-Agent", "HermesMobile/1.0")
                 connection.connect()
 
@@ -146,11 +150,12 @@ object RootfsBootstrap {
                 val output = FileOutputStream(dest)
 
                 val buffer = ByteArray(8192)
-                var bytesRead: Int
                 while (isCancelled) {
                     return false
                 }
-                while ((bytesRead = input.read(buffer)) != -1) {
+                while (true) {
+                    val bytesRead = input.read(buffer)
+                    if (bytesRead == -1) break
                     if (isCancelled) {
                         return false
                     }
@@ -170,8 +175,9 @@ object RootfsBootstrap {
             val digest = java.security.MessageDigest.getInstance("SHA-256")
             val fis = java.io.FileInputStream(file)
             val buffer = ByteArray(8192)
-            var bytesRead: Int
-            while ((bytesRead = fis.read(buffer)) != -1) {
+            while (true) {
+                val bytesRead = fis.read(buffer)
+                if (bytesRead == -1) break
                 digest.update(buffer, 0, bytesRead)
             }
             fis.close()

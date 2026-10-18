@@ -1,20 +1,15 @@
 package com.example.hermesmobile.runtime
 
-import android.app.ForegroundService
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
-import com.example.hermesmobile.R
-import com.example.hermesmobile.ui.MainScreen
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.ServerSocket
 import java.net.Socket
+import kotlin.concurrent.thread
 
 // The port the gateway API server will bind to (must match gateway config)
 private val GATEWAY_API_PORT = 8642
@@ -45,8 +40,8 @@ class AgentService : Service() {
                 val reader = BufferedReader(
                     InputStreamReader(pythonProcess!!.inputStream)
                 )
-                var line: String?
-                while ((line = reader.readLine()) != null) {
+                while (true) {
+                    val line = reader.readLine() ?: break
                     Log.d("HermesAgent", "gateway: $line")
                 }
             }
@@ -83,8 +78,8 @@ class AgentService : Service() {
 
             // Read from client and forward to gateway stdin
             thread {
-                val line: String?
-                while ((line = clientIn.readLine()) != null) {
+                while (true) {
+                    val line = clientIn.readLine() ?: break
                     bridgeWriter?.println(line)
                 }
             }
@@ -94,8 +89,8 @@ class AgentService : Service() {
                 val reader = BufferedReader(
                     InputStreamReader(pythonProcess!!.errorStream)
                 )
-                var line: String?
-                while ((line = reader.readLine()) != null) {
+                while (true) {
+                    val line = reader.readLine() ?: break
                     clientOut.println("GATEWAY: $line")
                 }
             }

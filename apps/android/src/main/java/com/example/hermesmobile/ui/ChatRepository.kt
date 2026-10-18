@@ -1,92 +1,64 @@
 package com.example.hermesmobile.ui
 
 import android.content.Context
-import com.squareup.okhttp.*
-import com.example.hermesmobile.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
 
 class ChatRepository(context: Context) {
     private val apiBase = "http://127.0.0.1:8642"
     private val client = OkHttpClient()
-    private val sessionId by lazy { java.util.UUID.randomUUID().toString() }
+    private val sessionId by lazy { UUID.randomUUID().toString() }
 
-    // Send a chat message through the gateway
-    suspend fun sendMessage(text: String): Result {
-        val body = """{
-            "model": "gpt-4o-mini",
-            "messages": [{"role": "user", "content": "$text"}],
-            "stream": true
-        }"""
+    sealed interface Result {
+        data class Success(val text: String) : Result
+        data class Failure(val error: Throwable) : Result
+    }
 
+    suspend fun sendMessage(text: String): Result = withContext(Dispatchers.IO) {
+        val payload = JSONObject()
+            .put("model", "gpt-4o-mini")
+            .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", text)))
+            .put("stream", false)
+            .toString()
+        val body = payload.toRequestBody("application/json".toMediaType())
         val request = Request.Builder()
             .url("$apiBase/v1/chat/completions")
-            .post(
-                RequestBody.create(
-                    mediaType = com.squareup.okhttp.MediaType.get("application/json"),
-                    content = body
-                )
-            )
-            .addHeader("Content-Type", "application/json")
-            .addHeader("X-Hermes-Session-Id", sessionId)
+            .post(body)
+            .header("X-Hermes-Session-Id", sessionId)
             .build()
-
-        return try {
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Result.success(response.body()?.string() ?: "No response body")
-                } else {
-                    val errorBody = response.body?.string() ?: "Unknown error"
-                    Result.failure(Exception("Gateway error $${response.code}: $errorBody"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        execute(request, "Gateway error")
     }
 
-    // Get the gateway status
-    suspend fun getStatus(): Result {
-        val request = Request.Builder()
-            .url("$apiBase/health")
-            .get()
-            .build()
-
-        return try {
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Result.success("Gateway OK")
-                } else {
-                    Result.failure(Exception("Gateway health check failed: ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+    suspend fun getStatus(): Result = withContext(Dispatchers.IO) {
+        execute(Request.Builder().url("$apiBase/health").get().build(), "Gateway health check failed")
     }
 
-    // List active sessions
-    suspend fun listSessions(): Result {
+    suspend fun listSessions(): Result = withContext(Dispatchers.IO) {
         val request = Request.Builder()
             .url("$apiBase/api/sessions")
+            .header("X-Hermes-Session-Id", sessionId)
             .get()
-            .addHeader("X-Hermes-Session-Id", sessionId)
             .build()
-
-        return try {
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Result.success(response.body()?.string() ?: "No sessions")
-                } else {
-                    Result.failure(Exception("List sessions failed: ${response.code}"))
-                }
-            }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        execute(request, "List sessions failed")
     }
-}
 
-// Result type for suspend functions
-enum class Result {
-    success(String),
-    failure(Exception)
+    private fun execute(request: Request, errorPrefix: String): Result = try {
+        client.newCall(request).execute().use { response ->
+            val responseText = response.body?.string().orEmpty()
+            if (response.isSuccessful) {
+                Result.Success(responseText.ifBlank { "No response body" })
+            } else {
+                Result.Failure(IllegalStateException("$errorPrefix ${response.code}: $responseText"))
+            }
+        }
+    } catch (error: Exception) {
+        Result.Failure(error)
+    }
 }

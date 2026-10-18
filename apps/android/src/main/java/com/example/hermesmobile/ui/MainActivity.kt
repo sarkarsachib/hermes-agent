@@ -1,331 +1,128 @@
 package com.example.hermesmobile.ui
 
-import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.Arrangement
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.verticalscroll.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import com.example.hermesmobile.R
 import com.example.hermesmobile.shizuku.ShizukuManager
-import com.example.hermesmobile.ui.ChatRepository
-import com.example.hermesmobile.runtime.AgentService
-import com.example.hermesmobile.ui.TerminalIOScheduler
-import com.example.hermesmobile.ui.RootfsBootstrap
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    HermesMobileScreen()
+                }
+            }
+        }
+    }
+}
 
 @Composable
-fun MainScreen(controller: MainController, onTerminalEnabled: () -> Unit) {
+private fun HermesMobileScreen() {
+    val context = LocalContext.current
+    val repository = remember(context) { ChatRepository(context) }
+    val shizuku = remember(context) { ShizukuManager(context) }
+    val scope = rememberCoroutineScope()
+    val messages = remember { mutableStateListOf<String>() }
     var input by remember { mutableStateOf("") }
-    val scrollState = rememberVerticalScrollState()
-    val repository = ChatRepository(LocalContext.current)
-    var result by remember { mutableStateOf("") }
-    var showTerminal by remember { mutableStateOf(false) }
-    var showShizuku by remember { mutableStateOf(false) }
-
-    // 1. Rootfs bootstrap: run once on first launch
-    var bootstrapped by remember { mutableStateOf(false) }
-    if (!bootstrapped) {
-        RootfsBootstrap.execute(LocalContext.current) { success ->
-            bootstrapped = success
-            if (success) {
-                onTerminalEnabled()
-            } else {
-                Log.w("MainActivity", "Rootfs bootstrap failed; terminal disabled")
-            }
-        }
-        remember { true }
-    }
-
-    // 2. Shizuku manager
-    val shizuku by remember { ShizukuManager(LocalContext.current) }
-    var shizukuReady by remember {
-        shizuku.awaitReady(5000)
-    }
-
-    // 3. Terminal I/O scheduler (PTY <-> gateway bridge)
-    // We create a single scheduler instance; it will be started when the terminal
-    * mode becomes active and a session is attached.
-    val terminalScheduler by remember {
-        object : TerminalIOScheduler() {
-            override suspend fun forwardToGateway(msg: String) {
-                // Send message to the Hermes gateway API
-                val resp = repository.sendMessage(msg)
-                when (resp) {
-                    is ChatRepository.Result.success -> result = ChatRepository.Result.success(
-                        "Sent: ${resp.text.take(50)}"
-                    )
-                    is ChatRepository.Result.failure -> result = ChatRepository.Result.failure(
-                        "Error: ${resp.failure.message}"
-                    )
-                }
-            }
-
-            override suspend fun fromGateway(msg: String) {
-                // Write text into the TerminalSession PTY so it scrolls in the terminal display
-                // (the actual session instance is passed start() below; here we just document the callback)
-            }
-        }
-    }
+    var status by remember { mutableStateOf("Not connected") }
+    var terminalMode by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(8.dp)
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-        horizontalAlignment = Alignment.Start
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Header
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = controller.status,
-                style = MaterialTheme.typography.h6,
-                modifier = Modifier.weight(1f)
-            )
-            Button(
-                onClick = controller.toggleConnection,
-                modifier = Modifier.size(80.dp, 36.dp)
-            ) {
-                if (controller.isConnected) "Disconnect" else "Connect"
-            }
-            Button(
-                onClick = { showTerminal = !showTerminal },
-                modifier = Modifier.size(60.dp, 36.dp)
-            ) {
-                Text("Term")
-            }
-            Button(
-                onClick = { showShizuku = !showShizuku },
-                modifier = Modifier.size(80.dp, 36.dp)
-            ) {
-                if (shizuku.isAvailable()) "Shizuku OK" else "Shizuku"
-            }
-        }
-
-        // Chat / terminal area
-        if (showTerminal && controller.isConnected) {
-            TerminalArea(
-                showTerminal = showTerminal,
-                onTerminalInput = { cmd ->
-                    // Forward terminal command to gateway
-                    // The scheduler's forwardToGateway will send it via ChatRepository
-                    // No extra action needed here; the scheduler handles it
-                },
-                context = LocalContext.current,
-                terminalScheduler = terminalScheduler
-            )
-        } else {
-            // Chat message list area
-            val messages = controller.messages
-            if (messages.isEmpty()) {
-                Text(
-                    text = "Waiting for connection…",
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f)
-                        .verticalScroll(scrollState)
-                ) {
-                    items(messages.size) { index ->
-                        val msg = messages[index]
-                        Text(
-                            text = msg,
-                            style = MaterialTheme.typography.body1,
-                            modifier = Modifier
-                                .paddingBottom(4.dp)
-                                .fillMaxWidth(0.8f)
-                        )
+        Text("Hermes Mobile", style = MaterialTheme.typography.headlineSmall)
+        Text(status, style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = {
+                scope.launch {
+                    status = "Checking gateway…"
+                    status = when (val result = repository.getStatus()) {
+                        is ChatRepository.Result.Success -> "Gateway connected"
+                        is ChatRepository.Result.Failure -> "Gateway unavailable: ${result.error.message ?: "error"}"
                     }
                 }
+            }) {
+                Text("Check gateway")
+            }
+            OutlinedButton(onClick = { terminalMode = !terminalMode }) {
+                Text(if (terminalMode) "Chat" else "Terminal")
             }
         }
 
-        // Send result
-        if (result.text.isNotEmpty()) {
+        if (terminalMode) {
             Text(
-                text = "▶ ${result.text}",
-                style = MaterialTheme.typography.body2,
-                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                text = if (shizuku.isAvailable()) {
+                    "Shizuku is available. The terminal session integration is not yet wired into this screen."
+                } else {
+                    "Terminal setup requires a configured rootfs and Shizuku service."
+                },
+                style = MaterialTheme.typography.bodyMedium
             )
-        }
-
-        // Input row (visible when not in terminal mode)
-        if (!showTerminal) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            OutlinedButton(onClick = { shizuku.requestPermission() }) {
+                Text("Request Shizuku permission")
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                items(messages) { message ->
+                    Text(message, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextField(
                     value = input,
                     onValueChange = { input = it },
-                    label = { Text("Message") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(0.75f)
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Message") }
                 )
-                Button(
-                    onClick = {
-                        val resp = repository.sendMessage(input)
-                        when (resp) {
-                            is ChatRepository.Result.success -> result = ChatRepository.Result.success(
-                                "Sent: ${resp.text.take(50)}"
-                            )
-                            is ChatRepository.Result.failure -> result = ChatRepository.Result.failure(
-                                "Error: ${resp.failure.message}"
-                            )
-                        }
+                Button(onClick = {
+                    val text = input.trim()
+                    if (text.isNotEmpty()) {
+                        messages.add("You: $text")
                         input = ""
-                    },
-                    modifier = Modifier.size(80.dp, 36.dp)
-                ) {
+                        scope.launch {
+                            when (val result = repository.sendMessage(text)) {
+                                is ChatRepository.Result.Success -> messages.add("Hermes: ${result.text}")
+                                is ChatRepository.Result.Failure -> messages.add(
+                                    "Error: ${result.error.message ?: "request failed"}"
+                                )
+                            }
+                        }
+                    }
+                }) {
                     Text("Send")
                 }
             }
         }
     }
-}
-
-@Composable
-fun TerminalArea(
-    showTerminal: Boolean,
-    onTerminalInput: (String) -> Unit,
-    context: Context,
-    terminalScheduler: TerminalIOScheduler
-) {
-    val shizuku = ShizukuManager(context)
-    var userInput by remember { mutableStateOf("") }
-
-    // The TerminalSession will be attached here; we start the scheduler with it.
-    // For now, we show a placeholder and the input row.
-    //
-    // When the session becomes available (after rootfs bootstrap + proot launch),
-    * we call terminalScheduler.start(session) which begins the PTY↔gateway loop.
-    //
-    // Until then, we fall back to the Shizuku shell-command mode.
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.End,
-        horizontalAlignment = Alignment.Start
-    ) {
-        // Terminal display area placeholder
-        if (shizuku.isAvailable()) {
-            Text(
-                text = "Terminal active — typing commands sends to agent via gateway",
-                style = MaterialTheme.typography.body1,
-                modifier = Modifier.padding(8.dp)
-            )
-        } else {
-            Text(
-                text = "Shizuku not available",
-                style = MaterialTheme.typography.body1,
-                modifier = Modifier.padding(8.dp),
-                color = MaterialTheme.colorScheme.error
-            )
-        }
-
-        // Send: two modes
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            if (shizuku.isAvailable()) {
-                // Mode A: direct Shizuku shell command (existing behavior)
-                TextField(
-                    value = userInput,
-                    onValueChange = { userInput = it },
-                    label = { Text("Shizuku Cmd") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(0.6f)
-                )
-                Button(
-                    onClick = {
-                        val cmd = userInput.trim()
-                        if (cmd.isNotEmpty()) {
-                            shizuku.runShellCommand(cmd) { stdout, stderr, exitCode ->
-                                val output = if (stdout != null && stdout.isNotBlank()) {
-                                    "Output (exit=$exitCode): $stdout"
-                                } else if (stderr != null && stderr.isNotBlank()) {
-                                    "Error (exit=$exitCode): $stderr"
-                                } else {
-                                    "Command finished (exit=$exitCode)"
-                                }
-                                result = when {
-                                    stdout != null && stdout.isNotBlank() -> ChatRepository.Result.success(output)
-                                    else -> ChatRepository.Result.failure(output)
-                                }
-                            }
-                            userInput = ""
-                        }
-                    modifier = Modifier.size(80.dp, 36.dp)
-                ) {
-                    "Run"
-                }
-            } else {
-                // Mode B: gateway message (text sent via ChatRepository)
-                TextField(
-                    value = userInput,
-                    onValueChange = { userInput = it },
-                    label = { Text("Gateway Msg") },
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(0.6f)
-                )
-                Button(
-                    onClick = {
-                        val cmd = userInput.trim()
-                        if (cmd.isNotEmpty()) {
-                            // Forward to the scheduler, which sends to gateway via forwardToGateway
-                            // We run on the coroutine context; since we're in Compose, we use LaunchedEffect
-                            // or a simple inline call given this is a demo scaffold.
-                            // TODO: integrate with terminalScheduler.forwardToGateway properly
-                            result = ChatRepository.Result.success("Sent via gateway: ${cmd.take(30)}")
-                            userInput = ""
-                        }
-                    modifier = Modifier.size(80.dp, 36.dp)
-                ) {
-                    "Send"
-                }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Called when the user toggles terminal mode on; starts the I/O scheduler with a
-// TerminalSession once the rootfs is bootstrapped and the session is available.
-// ---------------------------------------------------------------------------
-fun onTerminalInput(cmd: String) {
-    // Legacy: forward a one-off command via Shizuku or gateway
-    // The new flow uses the TerminalSession PTY + TerminalIOScheduler for continuous
-    // bidirectional I/O; this function is kept for backward compatibility.
-}
-
-// ---------------------------------------------------------------------------
-// Controller object
-// ---------------------------------------------------------------------------
-object MainController {
-    var isConnected by mutableStateOf(false)
-    val messages: List<String> = emptyList()
-    val status: String = if (isConnected) "Connected" else "Disconnected"
-
-    fun toggleConnection() = TODO()
-    fun sendMessage() = TODO()
 }

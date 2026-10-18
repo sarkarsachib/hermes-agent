@@ -1,28 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <!-- Base application theme. -->
-    <style name="Theme.HermesMobile" parent="Theme.Material.DayNight.NoActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">@color/material_dark_primary</item>
-        <item name="colorPrimaryContainer">@color/material_dark_primary_container</item>
-        <item name="colorOnPrimary">@color/white</item>
-        <!-- Secondary color. -->
-        <item name="colorSecondary">@color/material_secondary</item>
-        <item name="colorSecondaryContainer">@color/material_secondary_container</item>
-        <item name="colorOnSecondary">@color/black</item>
-        <!-- Background color. -->
-        <item name="colorBackground">#1e1e1e</item>
-        <item name="colorOnBackground">#ffffff</item>
-        <!-- Status bar. -->
+    <style name="Theme.HermesMobile" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">@color/material_dark_primary</item>
         <item name="android:statusBarColor">#1e1e1e</item>
+        <item name="android:navigationBarColor">#1e1e1e</item>
     </style>
 
-    <!-- NoActionBar variant -->
-    <style name="Theme.HermesMobile.NoActionBar">
-        <item name="windowNoTitle">true</item>
-        <item name="windowActionBar">false</item>
-        <item name="android:layoutInScreen">true</item>
-    </style>
-
+    <style name="Theme.HermesMobile.NoActionBar" parent="Theme.HermesMobile" />
 </resources>

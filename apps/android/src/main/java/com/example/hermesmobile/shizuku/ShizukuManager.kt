@@ -5,13 +5,14 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
-import dev.rikka.shizuku.Shizuku
-import dev.rikka.shizuku.Shizuku.OnBinderReceivedListener
-import dev.rikka.shizuku.Shizuku.OnBinderDeadListener
-import dev.rikka.shizuku.Shizuku.OnRequestPermissionResultListener
-import dev.rikka.shizuku.ShizukuProvider
+import rikka.shizuku.Shizuku
+import rikka.shizuku.Shizuku.OnBinderReceivedListener
+import rikka.shizuku.Shizuku.OnBinderDeadListener
+import rikka.shizuku.Shizuku.OnRequestPermissionResultListener
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+
+private const val REQUEST_CODE_SHIZUKU = 2048
 
 /**
  * ShizukuManager provides device-control capabilities via the Shizuku API
@@ -46,39 +47,48 @@ class ShizukuManager(private val context: Context) {
 
     private fun setupListeners() {
         // Binder received: Shizuku service became available
-        binderReceivedListener = { binder ->
-            Log.d("ShizukuManager", "Shizuku binder received")
-            checkPermissionAndUpdateState()
+        val receivedListener = object : OnBinderReceivedListener {
+            override fun onBinderReceived() {
+                Log.d("ShizukuManager", "Shizuku binder received")
+                checkPermissionAndUpdateState()
+            }
         }
+        binderReceivedListener = receivedListener
 
         // Binder dead: Shizuku service disconnected
-        binderDeadListener = {
-            Log.w("ShizukuManager", "Shizuku binder dead")
-            binderReady = false
-            permissionGranted = false
+        val deadListener = object : OnBinderDeadListener {
+            override fun onBinderDead() {
+                Log.w("ShizukuManager", "Shizuku binder dead")
+                binderReady = false
+                permissionGranted = false
+            }
         }
+        binderDeadListener = deadListener
 
         // Permission result: user response to Shizuku permission request
-        permissionListener = { requestCode, grantResult ->
-            if (requestCode != Shizuku.REQUEST_CODE_SHIZUKU) return@OnRequestPermissionResultListener
-            when {
-                grantResult == PackageManager.PERMISSION_GRANTED -> {
-                    permissionGranted = true
-                    Log.d("ShizukuManager", "Shizuku permission granted")
-                    checkPermissionAndUpdateState()
-                }
-                else -> {
-                    Log.w("ShizukuManager", "Shizuku permission denied or ignored")
-                    permissionGranted = false
+        val requestListener = object : OnRequestPermissionResultListener {
+            override fun onRequestPermissionResult(requestCode: Int, grantResult: Int) {
+                if (requestCode != REQUEST_CODE_SHIZUKU) return
+                when {
+                    grantResult == PackageManager.PERMISSION_GRANTED -> {
+                        permissionGranted = true
+                        Log.d("ShizukuManager", "Shizuku permission granted")
+                        checkPermissionAndUpdateState()
+                    }
+                    else -> {
+                        Log.w("ShizukuManager", "Shizuku permission denied or ignored")
+                        permissionGranted = false
+                    }
                 }
             }
         }
+        permissionListener = requestListener
 
         // Register all listeners (sticky binder listener fires even if binder was
         // received before registration, so we can safely register at init time)
-        Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
-        Shizuku.addBinderDeadListener(binderDeadListener)
-        Shizuku.addRequestPermissionResultListener(permissionListener)
+        Shizuku.addBinderReceivedListenerSticky(receivedListener)
+        Shizuku.addBinderDeadListener(deadListener)
+        Shizuku.addRequestPermissionResultListener(requestListener)
     }
 
     /**
@@ -86,7 +96,7 @@ class ShizukuManager(private val context: Context) {
      * Called whenever binder availability or permission may have changed.
      */
     private fun checkPermissionAndUpdateState() {
-        val binderOk = Shizuku.isServiceConnected()
+        val binderOk = Shizuku.pingBinder()
         val permOk = Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
 
         binderReady = binderOk
@@ -119,7 +129,7 @@ class ShizukuManager(private val context: Context) {
      * Check if Shizuku is available (service connected + permission granted).
      */
     fun isAvailable(): Boolean {
-        return Shizuku.isServiceConnected() &&
+        return Shizuku.pingBinder() &&
             Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
     }
 
@@ -134,12 +144,12 @@ class ShizukuManager(private val context: Context) {
         // The permission request is handled asynchronously via the registered listener.
         // Calling this triggers the Shizuku system UI for the user to grant/deny.
         // Result is delivered through the listener set up in init.
-        if (!Shizuku.isServiceConnected()) {
+        if (!Shizuku.pingBinder()) {
             Log.w("ShizukuManager", "Cannot request permission: Shizuku service not connected")
             return
         }
         // Request permission - the result will come through the registered listener
-        Shizuku.requestPermission(Shizuku.REQUEST_CODE_SHIZUKU)
+        Shizuku.requestPermission(REQUEST_CODE_SHIZUKU)
     }
 
     /**
@@ -351,7 +361,7 @@ class ShizukuManager(private val context: Context) {
             if (exitCode == 0 && stdout != null) {
                 // Look for ro.product.model in the output
                 val modelLine = stdout.lines().firstOrNull { it.startsWith("ro.product.model=") }
-                val model = modelLine?.substringAfter("ro.product.model=").trim()
+                val model = modelLine?.substringAfter("ro.product.model=")?.trim()
                 Log.i("ShizukuManager", "getDeviceModel: $model (shell)")
                 callback(model)
             } else {
@@ -391,8 +401,8 @@ class ShizukuManager(private val context: Context) {
      * Call this when the hosting Activity/Fragment is destroyed to avoid leaks.
      */
     fun cleanup() {
-        Shizuku.removeBinderReceivedListener(binderReceivedListener)
-        Shizuku.removeBinderDeadListener(binderDeadListener)
-        Shizuku.removeRequestPermissionResultListener(permissionListener)
+        binderReceivedListener?.let { Shizuku.removeBinderReceivedListener(it) }
+        binderDeadListener?.let { Shizuku.removeBinderDeadListener(it) }
+        permissionListener?.let { Shizuku.removeRequestPermissionResultListener(it) }
     }
 }
